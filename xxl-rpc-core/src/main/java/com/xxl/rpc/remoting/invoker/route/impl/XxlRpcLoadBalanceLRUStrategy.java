@@ -4,6 +4,7 @@ import com.xxl.rpc.remoting.invoker.route.XxlRpcLoadBalance;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * lru
@@ -12,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class XxlRpcLoadBalanceLRUStrategy extends XxlRpcLoadBalance {
 
-    private ConcurrentHashMap<String, LinkedHashMap<String, String>> jobLRUMap = new ConcurrentHashMap<String, LinkedHashMap<String, String>>();
+    private ConcurrentMap<String, LinkedHashMap<String, String>> jobLRUMap = new ConcurrentHashMap<String, LinkedHashMap<String, String>>();
     private long CACHE_VALID_TIME = 0;
 
     public String doRoute(String serviceKey, TreeSet<String> addressSet) {
@@ -44,10 +45,22 @@ public class XxlRpcLoadBalanceLRUStrategy extends XxlRpcLoadBalance {
             jobLRUMap.putIfAbsent(serviceKey, lruItem);
         }
 
-        // put
+        // put new
         for (String address: addressSet) {
             if (!lruItem.containsKey(address)) {
                 lruItem.put(address, address);
+            }
+        }
+        // remove old
+        List<String> delKeys = new ArrayList<>();
+        for (String existKey: lruItem.keySet()) {
+            if (!addressSet.contains(existKey)) {
+                delKeys.add(existKey);
+            }
+        }
+        if (delKeys.size() > 0) {
+            for (String delKey: delKeys) {
+                lruItem.remove(delKey);
             }
         }
 

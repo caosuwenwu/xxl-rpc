@@ -4,14 +4,17 @@ import com.xxl.rpc.remoting.invoker.XxlRpcInvokerFactory;
 import com.xxl.rpc.remoting.invoker.call.CallType;
 import com.xxl.rpc.remoting.invoker.call.XxlRpcInvokeCallback;
 import com.xxl.rpc.remoting.invoker.call.XxlRpcInvokeFuture;
+import com.xxl.rpc.remoting.invoker.generic.XxlRpcGenericService;
 import com.xxl.rpc.remoting.invoker.route.LoadBalance;
 import com.xxl.rpc.remoting.net.Client;
-import com.xxl.rpc.remoting.net.NetEnum;
+import com.xxl.rpc.remoting.net.impl.netty.client.NettyClient;
 import com.xxl.rpc.remoting.net.params.XxlRpcFutureResponse;
 import com.xxl.rpc.remoting.net.params.XxlRpcRequest;
 import com.xxl.rpc.remoting.net.params.XxlRpcResponse;
 import com.xxl.rpc.remoting.provider.XxlRpcProviderFactory;
 import com.xxl.rpc.serialize.Serializer;
+import com.xxl.rpc.serialize.impl.HessianSerializer;
+import com.xxl.rpc.util.ClassUtil;
 import com.xxl.rpc.util.XxlRpcException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,53 +38,88 @@ public class XxlRpcReferenceBean {
 
 	// ---------------------- config ----------------------
 
-	private NetEnum netType;
-	private Serializer serializer;
-	private CallType callType;
-	private LoadBalance loadBalance;
+	private Class<? extends Client> client = NettyClient.class;
+	private Class<? extends Serializer> serializer = HessianSerializer.class;
+	private CallType callType = CallType.SYNC;
+	private LoadBalance loadBalance = LoadBalance.ROUND;
 
-	private Class<?> iface;
-	private String version;
+	private Class<?> iface = null;
+	private String version = null;
 
 	private long timeout = 1000;
 
-	private String address;
-	private String accessToken;
+	private String address = null;
+	private String accessToken = null;
 
-	private XxlRpcInvokeCallback invokeCallback;
+	private XxlRpcInvokeCallback invokeCallback = null;
 
-	private XxlRpcInvokerFactory invokerFactory;
+	private XxlRpcInvokerFactory invokerFactory = null;
 
-	public XxlRpcReferenceBean(NetEnum netType,
-							   Serializer serializer,
-							   CallType callType,
-							   LoadBalance loadBalance,
-							   Class<?> iface,
-							   String version,
-							   long timeout,
-							   String address,
-							   String accessToken,
-							   XxlRpcInvokeCallback invokeCallback,
-							   XxlRpcInvokerFactory invokerFactory
-	) {
 
-		this.netType = netType;
+	// set
+	public void setClient(Class<? extends Client> client) {
+		this.client = client;
+	}
+	public void setSerializer(Class<? extends Serializer> serializer) {
 		this.serializer = serializer;
+	}
+	public void setCallType(CallType callType) {
 		this.callType = callType;
+	}
+	public void setLoadBalance(LoadBalance loadBalance) {
 		this.loadBalance = loadBalance;
+	}
+	public void setIface(Class<?> iface) {
 		this.iface = iface;
+	}
+	public void setVersion(String version) {
 		this.version = version;
+	}
+	public void setTimeout(long timeout) {
 		this.timeout = timeout;
+	}
+	public void setAddress(String address) {
 		this.address = address;
+	}
+	public void setAccessToken(String accessToken) {
 		this.accessToken = accessToken;
+	}
+	public void setInvokeCallback(XxlRpcInvokeCallback invokeCallback) {
 		this.invokeCallback = invokeCallback;
+	}
+	public void setInvokerFactory(XxlRpcInvokerFactory invokerFactory) {
 		this.invokerFactory = invokerFactory;
+	}
+
+
+	// get
+	public Serializer getSerializerInstance() {
+		return serializerInstance;
+	}
+	public long getTimeout() {
+		return timeout;
+	}
+
+	public XxlRpcInvokerFactory getInvokerFactory() {
+		return invokerFactory;
+	}
+	public Class<?> getIface() {
+		return iface;
+	}
+
+
+	// ---------------------- initClient ----------------------
+
+	private Client clientInstance = null;
+	private Serializer serializerInstance = null;
+
+	public XxlRpcReferenceBean initClient() throws Exception {
 
 		// valid
-		if (this.netType==null) {
-			throw new XxlRpcException("xxl-rpc reference netType missing.");
+		if (this.client == null) {
+			throw new XxlRpcException("xxl-rpc reference client missing.");
 		}
-		if (this.serializer==null) {
+		if (this.serializer == null) {
 			throw new XxlRpcException("xxl-rpc reference serializer missing.");
 		}
 		if (this.callType==null) {
@@ -100,49 +138,62 @@ public class XxlRpcReferenceBean {
 			this.invokerFactory = XxlRpcInvokerFactory.getInstance();
 		}
 
+		// init serializerInstance
+		this.serializerInstance = serializer.newInstance();
+
 		// init Client
-		initClient();
-	}
+		clientInstance = client.newInstance();
+		clientInstance.init(this);
 
-	// get
-	public Serializer getSerializer() {
-		return serializer;
-	}
-	public long getTimeout() {
-		return timeout;
-	}
-
-	public XxlRpcInvokerFactory getInvokerFactory() {
-		return invokerFactory;
-	}
-
-	// ---------------------- initClient ----------------------
-
-	Client client = null;
-
-	private void initClient() {
-		try {
-			client = netType.clientClass.newInstance();
-			client.init(this);
-		} catch (InstantiationException | IllegalAccessException e) {
-			throw new XxlRpcException(e);
-		}
+		return this;
 	}
 
 
 	// ---------------------- util ----------------------
 
-	public Object getObject() {
+	public Object getObject() throws Exception {
+
+		// initClient
+		initClient();
+
+		// newProxyInstance
 		return Proxy.newProxyInstance(Thread.currentThread()
 				.getContextClassLoader(), new Class[] { iface },
 				new InvocationHandler() {
 					@Override
 					public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-						String className = method.getDeclaringClass().getName();
+
+						// method param
+						String className = method.getDeclaringClass().getName();	// iface.getName()
+						String varsion_ = version;
+						String methodName = method.getName();
+						Class<?>[] parameterTypes = method.getParameterTypes();
+						Object[] parameters = args;
+
+						// filter for generic
+						if (className.equals(XxlRpcGenericService.class.getName()) && methodName.equals("invoke")) {
+
+							Class<?>[] paramTypes = null;
+							if (args[3]!=null) {
+								String[] paramTypes_str = (String[]) args[3];
+								if (paramTypes_str.length > 0) {
+									paramTypes = new Class[paramTypes_str.length];
+									for (int i = 0; i < paramTypes_str.length; i++) {
+										paramTypes[i] = ClassUtil.resolveClass(paramTypes_str[i]);
+									}
+								}
+							}
+
+							className = (String) args[0];
+							varsion_ = (String) args[1];
+							methodName = (String) args[2];
+							parameterTypes = paramTypes;
+							parameters = (Object[]) args[4];
+						}
 
 						// filter method like "Object.toString()"
-						if (Object.class.getName().equals(className)) {
-							logger.info(">>>>>>>>>>> xxl-rpc proxy class-method not support [{}.{}]", className, method.getName());
+						if (className.equals(Object.class.getName())) {
+							logger.info(">>>>>>>>>>> xxl-rpc proxy class-method not support [{}#{}]", className, methodName);
 							throw new XxlRpcException("xxl-rpc proxy class-method not support");
 						}
 
@@ -151,7 +202,7 @@ public class XxlRpcReferenceBean {
 						if (finalAddress==null || finalAddress.trim().length()==0) {
 							if (invokerFactory!=null && invokerFactory.getServiceRegistry()!=null) {
 								// discovery
-								String serviceKey = XxlRpcProviderFactory.makeServiceKey(iface.getName(), version);
+								String serviceKey = XxlRpcProviderFactory.makeServiceKey(className, varsion_);
 								TreeSet<String> addressSet = invokerFactory.getServiceRegistry().discovery(serviceKey);
 								// load balance
 								if (addressSet==null || addressSet.size()==0) {
@@ -174,9 +225,10 @@ public class XxlRpcReferenceBean {
 	                    xxlRpcRequest.setCreateMillisTime(System.currentTimeMillis());
 	                    xxlRpcRequest.setAccessToken(accessToken);
 	                    xxlRpcRequest.setClassName(className);
-	                    xxlRpcRequest.setMethodName(method.getName());
-	                    xxlRpcRequest.setParameterTypes(method.getParameterTypes());
-	                    xxlRpcRequest.setParameters(args);
+	                    xxlRpcRequest.setMethodName(methodName);
+	                    xxlRpcRequest.setParameterTypes(parameterTypes);
+	                    xxlRpcRequest.setParameters(parameters);
+	                    xxlRpcRequest.setVersion(version);
 	                    
 	                    // send
 						if (CallType.SYNC == callType) {
@@ -184,7 +236,7 @@ public class XxlRpcReferenceBean {
 							XxlRpcFutureResponse futureResponse = new XxlRpcFutureResponse(invokerFactory, xxlRpcRequest, null);
 							try {
 								// do invoke
-								client.asyncSend(finalAddress, xxlRpcRequest);
+								clientInstance.asyncSend(finalAddress, xxlRpcRequest);
 
 								// future get
 								XxlRpcResponse xxlRpcResponse = futureResponse.get(timeout, TimeUnit.MILLISECONDS);
@@ -209,7 +261,7 @@ public class XxlRpcReferenceBean {
 								XxlRpcInvokeFuture.setFuture(invokeFuture);
 
                                 // do invoke
-                                client.asyncSend(finalAddress, xxlRpcRequest);
+								clientInstance.asyncSend(finalAddress, xxlRpcRequest);
 
                                 return null;
                             } catch (Exception e) {
@@ -236,7 +288,7 @@ public class XxlRpcReferenceBean {
 							// future-response set
 							XxlRpcFutureResponse futureResponse = new XxlRpcFutureResponse(invokerFactory, xxlRpcRequest, finalInvokeCallback);
 							try {
-								client.asyncSend(finalAddress, xxlRpcRequest);
+								clientInstance.asyncSend(finalAddress, xxlRpcRequest);
 							} catch (Exception e) {
 								logger.info(">>>>>>>>>>> xxl-rpc, invoke error, address:{}, XxlRpcRequest{}", finalAddress, xxlRpcRequest);
 
@@ -248,7 +300,7 @@ public class XxlRpcReferenceBean {
 
 							return null;
 						} else if (CallType.ONEWAY == callType) {
-                            client.asyncSend(finalAddress, xxlRpcRequest);
+							clientInstance.asyncSend(finalAddress, xxlRpcRequest);
                             return null;
                         } else {
 							throw new XxlRpcException("xxl-rpc callType["+ callType +"] invalid");
@@ -256,11 +308,6 @@ public class XxlRpcReferenceBean {
 
 					}
 				});
-	}
-
-
-	public Class<?> getObjectType() {
-		return iface;
 	}
 
 }

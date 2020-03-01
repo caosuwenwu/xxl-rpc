@@ -1,11 +1,5 @@
 package com.xxl.rpc.serialize;
 
-import com.xxl.rpc.serialize.impl.Hessian1Serializer;
-import com.xxl.rpc.serialize.impl.HessianSerializer;
-import com.xxl.rpc.serialize.impl.JacksonSerializer;
-import com.xxl.rpc.serialize.impl.ProtostuffSerializer;
-import com.xxl.rpc.util.XxlRpcException;
-
 /**
  * serializer
  *
@@ -19,12 +13,10 @@ public abstract class Serializer {
 	
 	public abstract <T> byte[] serialize(T obj);
 	public abstract <T> Object deserialize(byte[] bytes, Class<T> clazz);
-	
-	public enum SerializeEnum {
+
+	/*public enum SerializeEnum {
 		HESSIAN(HessianSerializer.class),
-		HESSIAN1(Hessian1Serializer.class),
-		PROTOSTUFF(ProtostuffSerializer.class),
-		JSON(JacksonSerializer.class);
+		HESSIAN1(Hessian1Serializer.class);
 
 		private Class<? extends Serializer> serializerClass;
 		private SerializeEnum (Class<? extends Serializer> serializerClass) {
@@ -47,6 +39,6 @@ public abstract class Serializer {
 			}
 			return defaultSerializer;
 		}
-	}
+	}*/
 
 }
